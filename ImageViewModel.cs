@@ -55,27 +55,93 @@ namespace CW3_grafika
         private PbmImage LoadPbmImage(string filePath)
         {
             using (var stream = File.OpenRead(filePath))
-            using (var reader = new BinaryReader(stream))
+            using (var reader = new StreamReader(stream)) // Use StreamReader to handle text and binary
             {
-                // Czytanie nagłówka
-                string header = ReadHeader(reader);
+                // Read the header
+                string header = reader.ReadLine();
 
-                if (header != "P4")
+                if (header != "P4" && header != "P1")
                 {
-                    throw new InvalidOperationException("Niewspierany format pliku (oczekiwano P4).");
+                    throw new InvalidOperationException("Unsupported file format (expected P4 or P1).");
                 }
 
-                // Wczytaj wymiary obrazu
+                // Read image dimensions
                 var dimensions = ReadDimensions(reader);
                 int width = dimensions.Item1;
                 int height = dimensions.Item2;
 
-                // Wczytaj piksele
-                bool[,] pixels = ReadPixels(reader, width, height);
+                bool[,] pixels;
+                if (header == "P4")
+                {
+                    pixels = ReadPixelsP4(reader, width, height);
+                }
+                else
+                {
+                    pixels = ReadPixelsP1(reader, width, height);
+                }
 
                 return new PbmImage { Width = width, Height = height, Pixels = pixels };
             }
         }
+
+        private bool[,] ReadPixelsP1(StreamReader reader, int width, int height)
+        {
+            bool[,] pixels = new bool[height, width];
+            for (int y = 0; y < height; y++)
+            {
+                var line = reader.ReadLine();
+                var bits = line.Split(' ');
+                for (int x = 0; x < width; x++)
+                {
+                    pixels[y, x] = bits[x] == "1";
+                }
+            }
+            return pixels;
+        }
+
+        private bool[,] ReadPixelsP4(StreamReader reader, int width, int height)
+        {
+            // Since we've read the header and dimensions using StreamReader, 
+            // we need to switch to BinaryReader for the pixel data.
+            var baseStream = reader.BaseStream;
+            baseStream.Seek(0, SeekOrigin.Begin); // Reset the stream position to the beginning.
+
+            using (var binaryReader = new BinaryReader(baseStream))
+            {
+                // Skip over the header and dimensions which have already been read.
+                SkipHeaderAndDimensions(binaryReader);
+
+                bool[,] pixels = new bool[height, width];
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x += 8)
+                    {
+                        byte b = binaryReader.ReadByte();
+                        for (int bit = 0; bit < 8 && (x + bit) < width; bit++)
+                        {
+                            pixels[y, x + bit] = (b & (1 << (7 - bit))) != 0;
+                        }
+                    }
+                }
+                return pixels;
+            }
+        }
+
+        private void SkipHeaderAndDimensions(BinaryReader reader)
+        {
+            // Read until you skip the first two lines (the header and the dimensions).
+            while (reader.ReadByte() != '\n') ; // Skip header line
+            while (reader.ReadByte() != '\n') ; // Skip dimensions line
+        }
+
+
+        private Tuple<int, int> ReadDimensions(StreamReader reader)
+        {
+            string line = reader.ReadLine();
+            var parts = line.Split(' ');
+            return Tuple.Create(int.Parse(parts[0]), int.Parse(parts[1]));
+        }
+
         private string ReadHeader(BinaryReader reader)
         {
             StringBuilder header = new StringBuilder();
@@ -87,17 +153,7 @@ namespace CW3_grafika
             return header.ToString();
         }
 
-        private Tuple<int, int> ReadDimensions(BinaryReader reader)
-        {
-            string line = "";
-            char ch;
-            while ((ch = reader.ReadChar()) != '\n')
-            {
-                line += ch;
-            }
-            var parts = line.Split(' ');
-            return Tuple.Create(int.Parse(parts[0]), int.Parse(parts[1]));
-        }
+      
 
         private bool[,] ReadPixels(BinaryReader reader, int width, int height)
         {
