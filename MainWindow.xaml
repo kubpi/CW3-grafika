@@ -4,24 +4,39 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:CW3_grafika"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        mc:Ignorable="d" WindowStartupLocation="CenterScreen"
+        Title="Aplikacja wczytywania obrazów" Height="900" Width="1600">
     <Window.DataContext>
         <local:ImageViewModel/>
     </Window.DataContext>
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+        <Grid.Effect>
+            <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.15" ShadowDepth="2"></DropShadowEffect>
+        </Grid.Effect>
         <Grid.RowDefinitions>
-            <RowDefinition Height="auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="0.2*"></RowDefinition>
+            <!-- MENU BAR -->
+            <RowDefinition Height="*"></RowDefinition>
+            <!-- OBRAZ -->
         </Grid.RowDefinitions>
+        <!--kolor menu bar-->
+        <Border Grid.Row="0" Background="WhiteSmoke"></Border>
         <StackPanel Orientation="Horizontal" Grid.Row="0">
-            <Button Content="Load Image" Command="{Binding LoadImageCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" VerticalAlignment="Top"/>
-            <Button Content="Save Image" Command="{Binding SaveImageCommand}" HorizontalAlignment="Left" Margin="10,10,0,0" VerticalAlignment="Top"/>
+            <!-- stackpanel dla menu bar -->
+            <RadioButton Name="PBMButton" Padding="5" Margin="40 50 0 70" ToolTip="PBM" Background="White"></RadioButton>
+            <TextBlock Text="PBM" FontSize="20" Margin="0 45 0 70"></TextBlock>
+            <RadioButton Name="PGMButton" Padding="5" Margin="40 50 0 70" ToolTip="PGM" Background="White"></RadioButton>
+            <TextBlock Text="PGM" FontSize="20" Margin="0 45 0 70"></TextBlock>
+            <RadioButton Name="PPMButton" Padding="5" Margin="40 50 0 70" ToolTip="PPM" Background="White"></RadioButton>
+            <TextBlock Text="PPM" FontSize="20" Margin="0 45 0 70"></TextBlock>
+
+            <Button Name="LoadButton" Command="{Binding LoadImageCommand}" Content="Załaduj obraz" Padding="5" FontSize="20" Margin="300 30 0 60" Background="White"></Button>
+            <Button Name="SaveButton" Command="{Binding SaveImageCommand}" Content="Zapisz obraz" Padding="5" FontSize="20" Margin="60 30 0 60" Background="White"></Button>
+
         </StackPanel>
-        <Image HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Grid.Row="1" Grid.Column="1" Source="{Binding ConvertedPbmImage}" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor" />
+
+        <Image Grid.Row="1" Source="{Binding ConvertedPbmImage}" RenderOptions.BitmapScalingMode="NearestNeighbor" Name="Image" Margin="100" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"></Image>
+        <!-- wczytywany obraz -->
+
     </Grid>
 </Window>
