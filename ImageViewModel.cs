@@ -137,10 +137,21 @@ namespace CW3_grafika
 
         private Tuple<int, int> ReadDimensions(StreamReader reader)
         {
-            string line = reader.ReadLine();
+            string line;
+            do
+            {
+                line = reader.ReadLine();
+            } while (line != null && line.StartsWith("#")); // Pomijaj linie komentarzy
+
+            if (line == null)
+            {
+                throw new InvalidOperationException("Nie znaleziono wymiarów obrazu.");
+            }
+
             var parts = line.Split(' ');
             return Tuple.Create(int.Parse(parts[0]), int.Parse(parts[1]));
         }
+
 
         private string ReadHeader(BinaryReader reader)
         {
