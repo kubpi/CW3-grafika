@@ -6,9 +6,9 @@ using System.Threading.Tasks;
 
 namespace CW3_grafika
 {
-    public class PgmImage : ImageBase
+    public abstract class ImageBase
     {
-        public int MaxValue { get; set; }
-        public byte[,] Pixels { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
     }
 }

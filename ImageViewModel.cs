@@ -19,18 +19,17 @@ namespace CW3_grafika
         public ICommand LoadImageCommand { get; private set; }
         public ICommand SaveImageCommand { get; private set; }
 
-        private PbmImage _pbmImage;
-        public PbmImage PbmImage
+        private ImageBase _image;
+        public ImageBase Image
         {
-            get { return _pbmImage; }
+            get { return _image; }
             set
             {
-                _pbmImage = value;
-                OnPropertyChanged(nameof(PbmImage));
-                OnPropertyChanged(nameof(ConvertedPbmImage)); // Dodaj to
+                _image = value;
+                OnPropertyChanged(nameof(Image));
+                OnPropertyChanged(nameof(ConvertedImage)); // Dodaj to
             }
         }
-
 
         public ImageViewModel()
         {
@@ -42,40 +41,89 @@ namespace CW3_grafika
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "PBM Images (*.pbm)|*.pbm",
-                Title = "Open PBM Image"
+                Filter = "PBM Images (*.pbm)|*.pbm|PGM Images (*.pgm)|*.pgm",
+                Title = "Open Image"
             };
 
             if (openFileDialog.ShowDialog() == true)
             {
-                PbmImage = LoadPbmImage(openFileDialog.FileName);
+                Image = LoadImage(openFileDialog.FileName);
             }
         }
 
-        private PbmImage LoadPbmImage(string filePath)
+        private ImageBase LoadImage(string filePath)
         {
+            // Wczytaj zawartość pliku i określ format na podstawie nagłówka
             using (var stream = File.OpenRead(filePath))
             using (var reader = new BinaryReader(stream))
             {
-                // Czytanie nagłówka
                 string header = ReadHeader(reader);
 
-                if (header != "P4")
+                if (header == "P1" || header == "P4")
                 {
-                    throw new InvalidOperationException("Niewspierany format pliku (oczekiwano P4).");
+                    return LoadPbmImage(reader);
                 }
-
-                // Wczytaj wymiary obrazu
-                var dimensions = ReadDimensions(reader);
-                int width = dimensions.Item1;
-                int height = dimensions.Item2;
-
-                // Wczytaj piksele
-                bool[,] pixels = ReadPixels(reader, width, height);
-
-                return new PbmImage { Width = width, Height = height, Pixels = pixels };
+                else if (header == "P2" || header == "P5")
+                {
+                    return LoadPgmImage(reader);
+                }
+                else
+                {
+                    throw new InvalidOperationException("Niewspierany format pliku.");
+                }
             }
         }
+
+        private ImageBase LoadPbmImage(BinaryReader reader)
+        {
+            var dimensions = ReadDimensions(reader);
+            int width = dimensions.Item1;
+            int height = dimensions.Item2;
+
+            // Wczytaj piksele
+            bool[,] pixels = ReadPixels(reader, width, height);
+
+            return new PbmImage { Width = width, Height = height, Pixels = pixels };
+        }
+
+        private ImageBase LoadPgmImage(StreamReader reader)
+        {
+            var dimensions = ReadDimensions(reader);
+            int width = dimensions.Item1;
+            int height = dimensions.Item2;
+
+            // Wczytaj maksymalną wartość piksela
+            int maxValue = ReadMaxValue(reader);
+
+            // Wczytaj piksele
+            byte[,] pixels = ReadPgmPixels(reader, width, height);
+
+            return new PgmImage { Width = width, Height = height, MaxValue = maxValue, Pixels = pixels };
+        }
+
+        private int ReadMaxValue(StreamReader reader)
+        {
+            string line = reader.ReadLine();
+            return int.Parse(line);
+        }
+
+        private byte[,] ReadPgmPixels(StreamReader reader, int width, int height)
+        {
+            byte[,] pixels = new byte[height, width];
+            int maxValue = 255; // Domyślna wartość dla formatu PGM
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int value = reader.Read();
+                    pixels[y, x] = (byte)value;
+                }
+            }
+
+            return pixels;
+        }
+
         private string ReadHeader(BinaryReader reader)
         {
             StringBuilder header = new StringBuilder();
@@ -119,32 +167,48 @@ namespace CW3_grafika
             return pixels;
         }
 
-
         private void SaveImage()
         {
             var saveFileDialog = new SaveFileDialog
             {
-                Filter = "PBM Image (*.pbm)|*.pbm",
-                Title = "Save PBM Image"
+                Filter = "PBM Image (*.pbm)|*.pbm|PGM Image (*.pgm)|*.pgm",
+                Title = "Save Image"
             };
 
             if (saveFileDialog.ShowDialog() == true)
             {
-                var formatChoice = MessageBox.Show("Czy chcesz zapisać obraz w formacie binarnym P4?",
+                var formatChoice = MessageBox.Show("Czy chcesz zapisać obraz w formacie binarnym?",
                                                    "Wybierz format",
                                                    MessageBoxButton.YesNo,
                                                    MessageBoxImage.Question);
 
-                bool saveAsP4 = formatChoice == MessageBoxResult.Yes;
-                SavePbmImage(PbmImage, saveFileDialog.FileName, saveAsP4);
+                bool saveAsBinary = formatChoice == MessageBoxResult.Yes;
+                SaveImage(Image, saveFileDialog.FileName, saveAsBinary);
             }
         }
 
-        private void SavePbmImage(PbmImage pbmImage, string filePath, bool saveAsP4)
+        private void SaveImage(ImageBase image, string filePath, bool saveAsBinary)
+        {
+            // Określ, czy zapisywać jako PBM czy PGM, na podstawie typu obrazu
+            if (image is PbmImage)
+            {
+                SavePbmImage((PbmImage)image, filePath, saveAsBinary);
+            }
+            else if (image is PgmImage)
+            {
+                SavePgmImage((PgmImage)image, filePath, saveAsBinary);
+            }
+            else
+            {
+                throw new InvalidOperationException("Niewspierany typ obrazu.");
+            }
+        }
+
+        private void SavePbmImage(PbmImage pbmImage, string filePath, bool saveAsBinary)
         {
             using (var stream = File.OpenWrite(filePath))
             {
-                if (saveAsP4)
+                if (saveAsBinary)
                 {
                     SaveP4(pbmImage, stream);
                 }
@@ -204,51 +268,106 @@ namespace CW3_grafika
             }
         }
 
-        public BitmapSource ConvertedPbmImage
+        private void SavePgmImage(PgmImage pgmImage, string filePath, bool saveAsBinary)
         {
-            get { return ConvertPbmToBitmapSource(_pbmImage); }
+            using (var stream = File.OpenWrite(filePath))
+            {
+                SaveP5(pgmImage, stream);
+            }
         }
 
-        private BitmapSource ConvertPbmToBitmapSource(PbmImage pbmImage)
+        private void SaveP5(PgmImage pgmImage, FileStream stream)
+        {
+            using (var writer = new BinaryWriter(stream))
+            {
+                // Zapisz nagłówek P5
+                writer.Write(Encoding.ASCII.GetBytes("P5\n"));
+                // Zapisz wymiary obrazu
+                writer.Write(Encoding.ASCII.GetBytes($"{pgmImage.Width} {pgmImage.Height}\n"));
+                // Zapisz maksymalną wartość piksela
+                writer.Write(Encoding.ASCII.GetBytes($"{pgmImage.MaxValue}\n"));
+
+                // Zapisz piksele
+                for (int y = 0; y < pgmImage.Height; y++)
+                {
+                    for (int x = 0; x < pgmImage.Width; x++)
+                    {
+                        writer.Write(pgmImage.Pixels[y, x]);
+                    }
+                }
+            }
+        }
+
+        // ... reszta kodu ...
+
+        public BitmapSource ConvertedImage
+        {
+            get { return ConvertImageToBitmapSource(_image); }
+        }
+
+        private BitmapSource ConvertImageToBitmapSource(ImageBase image)
         {
             try
             {
-                if (pbmImage == null)
+                if (image == null)
                 {
-                    Debug.WriteLine("PbmImage is null");
+                    Debug.WriteLine("Image is null");
                     return null;
                 }
 
-                int width = pbmImage.Width;
-                int height = pbmImage.Height;
-                Debug.WriteLine($"Converting PbmImage: width={width}, height={height}");
+                int width = image.Width;
+                int height = image.Height;
+                Debug.WriteLine($"Converting Image: width={width}, height={height}");
                 var pixels = new byte[width * height * 4];
 
-
-                for (int y = 0; y < height; y++)
+                if (image is PbmImage pbmImage)
                 {
-                    for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
                     {
-                        int index = (y * width + x) * 4;
-                        byte color = pbmImage.Pixels[y, x] ? (byte)0 : (byte)255;
-                        pixels[index] = color;     // Blue
-                        pixels[index + 1] = color; // Green
-                        pixels[index + 2] = color; // Red
-                        pixels[index + 3] = 255;   // Alpha
+                        for (int x = 0; x < width; x++)
+                        {
+                            int index = (y * width + x) * 4;
+                            byte color = pbmImage.Pixels[y, x] ? (byte)0 : (byte)255;
+                            pixels[index] = color;     // Blue
+                            pixels[index + 1] = color; // Green
+                            pixels[index + 2] = color; // Red
+                            pixels[index + 3] = 255;   // Alpha
+                        }
                     }
+                }
+                else if (image is PgmImage pgmImage)
+                {
+                    int maxValue = pgmImage.MaxValue;
+
+                    for (int y = 0; y < height; y++)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            int index = (y * width + x) * 4;
+                            byte value = (byte)(pgmImage.Pixels[y, x] * 255 / maxValue);
+                            pixels[index] = value;     // Blue
+                            pixels[index + 1] = value; // Green
+                            pixels[index + 2] = value; // Red
+                            pixels[index + 3] = 255;   // Alpha
+                        }
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("Unsupported image type");
+                    return null;
                 }
 
                 var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
-                Debug.WriteLine("PbmImage converted successfully");
+                Debug.WriteLine("Image converted successfully");
                 return bitmap;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("Exception in ConvertPbmToBitmapSource: " + ex.Message);
+                Debug.WriteLine("Exception in ConvertToBitmapSource: " + ex.Message);
                 throw; // Rzuć ponownie wyjątek, aby ułatwić debugowanie
             }
         }
-
 
         public event PropertyChangedEventHandler PropertyChanged;
         protected virtual void OnPropertyChanged(string propertyName)

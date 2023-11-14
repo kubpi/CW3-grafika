@@ -6,10 +6,8 @@ using System.Threading.Tasks;
 
 namespace CW3_grafika
 {
-    public class PbmImage
+    public class PbmImage : ImageBase
     {
-        public int Width { get; set; }
-        public int Height { get; set; }
         public bool[,] Pixels { get; set; }
 
 
