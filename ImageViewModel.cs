@@ -16,6 +16,9 @@ namespace CW3_grafika
 {
     public class ImageViewModel : INotifyPropertyChanged
     {
+        public bool IsPbmSelected { get; set; }
+        public bool IsPgmSelected { get; set; }
+
         public ICommand LoadImageCommand { get; private set; }
         public ICommand SaveImageCommand { get; private set; }
 
@@ -42,15 +45,23 @@ namespace CW3_grafika
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "PBM Images (*.pbm)|*.pbm",
-                Title = "Open PBM Image"
+                Filter = IsPbmSelected ? "PBM Images (*.pbm)|*.pbm" : "PGM Images (*.pgm)|*.pgm",
+                Title = IsPbmSelected ? "Open PBM Image" : "Open PGM Image"
             };
 
             if (openFileDialog.ShowDialog() == true)
             {
-                PbmImage = LoadPbmImage(openFileDialog.FileName);
+                if (IsPbmSelected)
+                {
+                    PbmImage = LoadPbmImage(openFileDialog.FileName);
+                }
+                else if (IsPgmSelected)
+                {
+                    PbmImage = LoadPgmImage(openFileDialog.FileName);
+                }
             }
         }
+
 
         private PbmImage LoadPbmImage(string filePath)
         {
@@ -84,13 +95,63 @@ namespace CW3_grafika
             }
         }
 
+        private PbmImage LoadPgmImage(string filePath)
+        {
+            using (var stream = File.OpenRead(filePath))
+            using (var reader = new StreamReader(stream))
+            {
+                string header = reader.ReadLine();
+
+                if (header != "P5" && header != "P2")
+                {
+                    throw new InvalidOperationException("Unsupported file format (expected P5 or P2).");
+                }
+
+                var dimensions = ReadDimensions(reader);
+                int maxVal = ReadMaxVal(reader);
+                int width = dimensions.Item1;
+                int height = dimensions.Item2;
+
+                bool[,] pixels;
+                if (header == "P5")
+                {
+                    pixels = ReadPixelsP5(reader, width, height, maxVal);
+                }
+                else
+                {
+                    pixels = ReadPixelsP2(reader, width, height, maxVal);
+                }
+
+                return new PbmImage { Width = width, Height = height, Pixels = pixels };
+            }
+        }
+
+        private int ReadMaxVal(StreamReader reader)
+        {
+            string line = reader.ReadLine();
+            return int.Parse(line);
+        }
+
         private bool[,] ReadPixelsP1(StreamReader reader, int width, int height)
         {
             bool[,] pixels = new bool[height, width];
             for (int y = 0; y < height; y++)
             {
-                var line = reader.ReadLine();
-                var bits = line.Split(' ');
+                string line;
+                while (true)
+                {
+                    line = reader.ReadLine();
+                    if (line == null)
+                    {
+                        throw new InvalidOperationException("Unexpected end of file while reading pixels.");
+                    }
+                    // Skip comment lines
+                    if (!line.StartsWith("#"))
+                    {
+                        break;
+                    }
+                }
+                var bits = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 for (int x = 0; x < width; x++)
                 {
                     pixels[y, x] = bits[x] == "1";
@@ -98,6 +159,7 @@ namespace CW3_grafika
             }
             return pixels;
         }
+
 
         private bool[,] ReadPixelsP4(StreamReader reader, int width, int height)
         {
@@ -137,38 +199,59 @@ namespace CW3_grafika
 
         private Tuple<int, int> ReadDimensions(StreamReader reader)
         {
-            string line = reader.ReadLine();
+            string line;
+            while (true)
+            {
+                line = reader.ReadLine();
+                if (line == null)
+                {
+                    throw new InvalidOperationException("Unexpected end of file while reading dimensions.");
+                }
+                // Skip comment lines
+                if (!line.StartsWith("#"))
+                {
+                    break;
+                }
+            }
             var parts = line.Split(' ');
             return Tuple.Create(int.Parse(parts[0]), int.Parse(parts[1]));
         }
 
-        private string ReadHeader(BinaryReader reader)
-        {
-            StringBuilder header = new StringBuilder();
-            char ch;
-            while ((ch = reader.ReadChar()) != '\n')
-            {
-                header.Append(ch);
-            }
-            return header.ToString();
-        }
 
-      
-
-        private bool[,] ReadPixels(BinaryReader reader, int width, int height)
+        private bool[,] ReadPixelsP2(StreamReader reader, int width, int height, int maxVal)
         {
             bool[,] pixels = new bool[height, width];
             for (int y = 0; y < height; y++)
             {
+                var line = reader.ReadLine();
+                var values = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 for (int x = 0; x < width; x++)
                 {
-                    if (x % 8 == 0) // Czytaj nowy bajt dla każdych 8 pikseli
+                    var pixelValue = int.Parse(values[x]);
+                    // Assuming conversion to binary (black and white), you may need to adjust this
+                    pixels[y, x] = pixelValue > maxVal / 2;
+                }
+            }
+            return pixels;
+        }
+
+        private bool[,] ReadPixelsP5(StreamReader reader, int width, int height, int maxVal)
+        {
+            var baseStream = reader.BaseStream;
+            baseStream.Seek(0, SeekOrigin.Begin); // Reset the stream position to the beginning.
+
+            bool[,] pixels = new bool[height, width];
+            using (var binaryReader = new BinaryReader(baseStream))
+            {
+                SkipHeaderAndDimensions(binaryReader); // Skip header and dimensions
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
                     {
-                        byte b = reader.ReadByte();
-                        for (int bit = 0; bit < 8 && (x + bit) < width; bit++)
-                        {
-                            pixels[y, x + bit] = (b & (1 << (7 - bit))) != 0;
-                        }
+                        byte pixelValue = binaryReader.ReadByte();
+                        // Assuming conversion to binary (black and white), you may need to adjust this
+                        pixels[y, x] = pixelValue > maxVal / 2;
                     }
                 }
             }
@@ -180,21 +263,33 @@ namespace CW3_grafika
         {
             var saveFileDialog = new SaveFileDialog
             {
-                Filter = "PBM Image (*.pbm)|*.pbm",
-                Title = "Save PBM Image"
+                Filter = IsPbmSelected ? "PBM Image (*.pbm)|*.pbm" : "PGM Image (*.pgm)|*.pgm",
+                Title = IsPbmSelected ? "Save PBM Image" : "Save PGM Image"
             };
 
             if (saveFileDialog.ShowDialog() == true)
             {
-                var formatChoice = MessageBox.Show("Czy chcesz zapisać obraz w formacie binarnym P4?",
-                                                   "Wybierz format",
-                                                   MessageBoxButton.YesNo,
-                                                   MessageBoxImage.Question);
-
-                bool saveAsP4 = formatChoice == MessageBoxResult.Yes;
-                SavePbmImage(PbmImage, saveFileDialog.FileName, saveAsP4);
+                if (IsPbmSelected)
+                {
+                    var formatChoice = MessageBox.Show("Czy chcesz zapisać obraz w formacie binarnym P4?",
+                                                       "Wybierz format",
+                                                       MessageBoxButton.YesNo,
+                                                       MessageBoxImage.Question);
+                    bool saveAsP4 = formatChoice == MessageBoxResult.Yes;
+                    SavePbmImage(PbmImage, saveFileDialog.FileName, saveAsP4);
+                }
+                else if (IsPgmSelected)
+                {
+                    var formatChoice = MessageBox.Show("Czy chcesz zapisać obraz w formacie binarnym P5?",
+                                                       "Wybierz format",
+                                                       MessageBoxButton.YesNo,
+                                                       MessageBoxImage.Question);
+                    bool saveAsP5 = formatChoice == MessageBoxResult.Yes;
+                    SavePgmImage(PbmImage, saveFileDialog.FileName, saveAsP5); // Implement SavePgmImage method
+                }
             }
         }
+
 
         private void SavePbmImage(PbmImage pbmImage, string filePath, bool saveAsP4)
         {
@@ -207,6 +302,21 @@ namespace CW3_grafika
                 else
                 {
                     SaveP1(pbmImage, stream);
+                }
+            }
+        }
+
+        private void SavePgmImage(PbmImage pbmImage, string filePath, bool saveAsP5)
+        {
+            using (var stream = File.OpenWrite(filePath))
+            {
+                if (saveAsP5)
+                {
+                    SaveP5(pbmImage, stream);
+                }
+                else
+                {
+                    SaveP2(pbmImage, stream);
                 }
             }
         }
@@ -255,6 +365,47 @@ namespace CW3_grafika
                             }
                         }
                         writer.Write(b);
+                    }
+                }
+            }
+        }
+
+        private void SaveP2(PbmImage pbmImage, FileStream stream)
+        {
+            using (var writer = new StreamWriter(stream))
+            {
+                writer.WriteLine("P2");
+                writer.WriteLine($"{pbmImage.Width} {pbmImage.Height}");
+                writer.WriteLine("255"); // Max value for grayscale
+
+                for (int y = 0; y < pbmImage.Height; y++)
+                {
+                    for (int x = 0; x < pbmImage.Width; x++)
+                    {
+                        // Convert binary pixel to grayscale value, adjust as needed
+                        int grayValue = pbmImage.Pixels[y, x] ? 0 : 255;
+                        writer.Write($"{grayValue} ");
+                    }
+                    writer.WriteLine();
+                }
+            }
+        }
+
+        private void SaveP5(PbmImage pbmImage, FileStream stream)
+        {
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(Encoding.ASCII.GetBytes("P5\n"));
+                writer.Write(Encoding.ASCII.GetBytes($"{pbmImage.Width} {pbmImage.Height}\n"));
+                writer.Write(Encoding.ASCII.GetBytes("255\n")); // Max value for grayscale
+
+                for (int y = 0; y < pbmImage.Height; y++)
+                {
+                    for (int x = 0; x < pbmImage.Width; x++)
+                    {
+                        // Convert binary pixel to grayscale value, adjust as needed
+                        byte grayValue = pbmImage.Pixels[y, x] ? (byte)0 : (byte)255;
+                        writer.Write(grayValue);
                     }
                 }
             }
