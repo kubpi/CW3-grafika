@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\kubpi\\Desktop\\CW3_grafika\\CW3_grafika.csproj": {}
+    "C:\\Users\\kubpi\\Desktop\\CW3-grafika\\CW3_grafika.csproj": {}
   },
   "projects": {
-    "C:\\Users\\kubpi\\Desktop\\CW3_grafika\\CW3_grafika.csproj": {
+    "C:\\Users\\kubpi\\Desktop\\CW3-grafika\\CW3_grafika.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\kubpi\\Desktop\\CW3_grafika\\CW3_grafika.csproj",
+        "projectUniqueName": "C:\\Users\\kubpi\\Desktop\\CW3-grafika\\CW3_grafika.csproj",
         "projectName": "CW3_grafika",
-        "projectPath": "C:\\Users\\kubpi\\Desktop\\CW3_grafika\\CW3_grafika.csproj",
+        "projectPath": "C:\\Users\\kubpi\\Desktop\\CW3-grafika\\CW3_grafika.csproj",
         "packagesPath": "C:\\Users\\kubpi\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\kubpi\\Desktop\\CW3_grafika\\obj\\",
+        "outputPath": "C:\\Users\\kubpi\\Desktop\\CW3-grafika\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\kubpi\\AppData\\Roaming\\NuGet\\NuGet.Config",

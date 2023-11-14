@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Diagnostics;
+using System.Windows;
 
 namespace CW3_grafika
 {
@@ -53,48 +54,71 @@ namespace CW3_grafika
 
         private PbmImage LoadPbmImage(string filePath)
         {
-            using (var reader = new StreamReader(filePath))
+            using (var stream = File.OpenRead(filePath))
+            using (var reader = new BinaryReader(stream))
             {
-                // Pomiń nagłówek P1 i komentarze
-                string line;
-                while ((line = reader.ReadLine()) != null)
-                {
-                    if (!line.StartsWith("#") && line.Trim() != "P1")
-                    {
-                        break;
-                    }
-                }
+                // Czytanie nagłówka
+                string header = ReadHeader(reader);
 
-                if (line == null)
+                if (header != "P4")
                 {
-                    throw new InvalidOperationException("Plik PBM jest nieprawidłowy lub pusty.");
+                    throw new InvalidOperationException("Niewspierany format pliku (oczekiwano P4).");
                 }
 
                 // Wczytaj wymiary obrazu
-                var dimensions = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                int width = int.Parse(dimensions[0]);
-                int height = int.Parse(dimensions[1]);
+                var dimensions = ReadDimensions(reader);
+                int width = dimensions.Item1;
+                int height = dimensions.Item2;
 
                 // Wczytaj piksele
-                bool[,] pixels = new bool[height, width];
-                for (int y = 0; y < height; y++)
-                {
-                    line = reader.ReadLine();
-                    if (string.IsNullOrEmpty(line))
-                    {
-                        throw new InvalidOperationException($"Brak danych dla wiersza {y}.");
-                    }
-
-                    var pixelRow = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    for (int x = 0; x < width; x++)
-                    {
-                        pixels[y, x] = pixelRow[x] == "1";
-                    }
-                }
+                bool[,] pixels = ReadPixels(reader, width, height);
 
                 return new PbmImage { Width = width, Height = height, Pixels = pixels };
             }
         }
+        private string ReadHeader(BinaryReader reader)
+        {
+            StringBuilder header = new StringBuilder();
+            char ch;
+            while ((ch = reader.ReadChar()) != '\n')
+            {
+                header.Append(ch);
+            }
+            return header.ToString();
+        }
+
+        private Tuple<int, int> ReadDimensions(BinaryReader reader)
+        {
+            string line = "";
+            char ch;
+            while ((ch = reader.ReadChar()) != '\n')
+            {
+                line += ch;
+            }
+            var parts = line.Split(' ');
+            return Tuple.Create(int.Parse(parts[0]), int.Parse(parts[1]));
+        }
+
+        private bool[,] ReadPixels(BinaryReader reader, int width, int height)
+        {
+            bool[,] pixels = new bool[height, width];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (x % 8 == 0) // Czytaj nowy bajt dla każdych 8 pikseli
+                    {
+                        byte b = reader.ReadByte();
+                        for (int bit = 0; bit < 8 && (x + bit) < width; bit++)
+                        {
+                            pixels[y, x + bit] = (b & (1 << (7 - bit))) != 0;
+                        }
+                    }
+                }
+            }
+            return pixels;
+        }
+
 
         private void SaveImage()
         {
@@ -106,12 +130,34 @@ namespace CW3_grafika
 
             if (saveFileDialog.ShowDialog() == true)
             {
-                SavePbmImage(PbmImage, saveFileDialog.FileName);
+                var formatChoice = MessageBox.Show("Czy chcesz zapisać obraz w formacie binarnym P4?",
+                                                   "Wybierz format",
+                                                   MessageBoxButton.YesNo,
+                                                   MessageBoxImage.Question);
+
+                bool saveAsP4 = formatChoice == MessageBoxResult.Yes;
+                SavePbmImage(PbmImage, saveFileDialog.FileName, saveAsP4);
             }
         }
-        private void SavePbmImage(PbmImage pbmImage, string filePath)
+
+        private void SavePbmImage(PbmImage pbmImage, string filePath, bool saveAsP4)
         {
-            using (var writer = new StreamWriter(filePath))
+            using (var stream = File.OpenWrite(filePath))
+            {
+                if (saveAsP4)
+                {
+                    SaveP4(pbmImage, stream);
+                }
+                else
+                {
+                    SaveP1(pbmImage, stream);
+                }
+            }
+        }
+
+        private void SaveP1(PbmImage pbmImage, FileStream stream)
+        {
+            using (var writer = new StreamWriter(stream))
             {
                 // Zapisz nagłówek P1
                 writer.WriteLine("P1");
@@ -126,6 +172,34 @@ namespace CW3_grafika
                         writer.Write(pbmImage.Pixels[y, x] ? "1 " : "0 ");
                     }
                     writer.WriteLine();
+                }
+            }
+        }
+
+        private void SaveP4(PbmImage pbmImage, FileStream stream)
+        {
+            using (var writer = new BinaryWriter(stream))
+            {
+                // Zapisz nagłówek P4
+                writer.Write(Encoding.ASCII.GetBytes("P4\n"));
+                // Zapisz wymiary obrazu
+                writer.Write(Encoding.ASCII.GetBytes($"{pbmImage.Width} {pbmImage.Height}\n"));
+
+                // Zapisz piksele
+                for (int y = 0; y < pbmImage.Height; y++)
+                {
+                    for (int x = 0; x < pbmImage.Width; x += 8)
+                    {
+                        byte b = 0;
+                        for (int bit = 0; bit < 8 && (x + bit) < pbmImage.Width; bit++)
+                        {
+                            if (pbmImage.Pixels[y, x + bit])
+                            {
+                                b |= (byte)(1 << (7 - bit));
+                            }
+                        }
+                        writer.Write(b);
+                    }
                 }
             }
         }
