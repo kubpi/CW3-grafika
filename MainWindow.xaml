@@ -23,11 +23,11 @@
         <Border Grid.Row="0" Background="WhiteSmoke"></Border>
         <StackPanel Orientation="Horizontal" Grid.Row="0">
             <!-- stackpanel dla menu bar -->
-            <RadioButton Name="PBMButton" Padding="5" Margin="40 50 0 70" ToolTip="PBM" Background="White"></RadioButton>
+            <RadioButton Name="PBMButton" Padding="5" Margin="40 50 0 70" ToolTip="PBM" Background="White" IsChecked="{Binding IsPbmChecked, Mode=TwoWay}"></RadioButton>
             <TextBlock Text="PBM" FontSize="20" Margin="0 45 0 70"></TextBlock>
-            <RadioButton Name="PGMButton" Padding="5" Margin="40 50 0 70" ToolTip="PGM" Background="White"></RadioButton>
+            <RadioButton Name="PGMButton" Padding="5" Margin="40 50 0 70" ToolTip="PGM" Background="White" IsChecked="{Binding IsPgmChecked, Mode=TwoWay}"></RadioButton>
             <TextBlock Text="PGM" FontSize="20" Margin="0 45 0 70"></TextBlock>
-            <RadioButton Name="PPMButton" Padding="5" Margin="40 50 0 70" ToolTip="PPM" Background="White"></RadioButton>
+            <RadioButton Name="PPMButton" Padding="5" Margin="40 50 0 70" ToolTip="PPM" Background="White" IsChecked="{Binding IsPpmChecked, Mode=TwoWay}"></RadioButton>
             <TextBlock Text="PPM" FontSize="20" Margin="0 45 0 70"></TextBlock>
 
             <Button Name="LoadButton" Command="{Binding LoadImageCommand}" Content="Załaduj obraz" Padding="5" FontSize="20" Margin="300 30 0 60" Background="White"></Button>
