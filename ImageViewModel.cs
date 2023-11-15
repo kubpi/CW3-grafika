@@ -20,6 +20,7 @@ namespace CW3_grafika
         private bool isPgmChecked;
         private bool isPpmChecked;
         private BitmapSource convertedImage;
+        private EventQueue eventQueue = new EventQueue();
 
         public bool IsPbmChecked
         {
@@ -65,12 +66,20 @@ namespace CW3_grafika
 
         public ImageViewModel()
         {
-            LoadImageCommand = new RelayCommand(async () => await LoadImageAsync());
+            LoadImageCommand = new RelayCommand(async () => await EnqueueLoadImageAsync());
         }
 
         private void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private async Task EnqueueLoadImageAsync()
+        {
+            await eventQueue.EnqueueAsync(async () =>
+            {
+                await LoadImageAsync();
+            });
         }
 
         private async Task LoadImageAsync()
@@ -167,7 +176,6 @@ namespace CW3_grafika
                 }
             }
         }
-
 
         private void LoadPgmImage(string filePath)
         {
@@ -313,7 +321,6 @@ namespace CW3_grafika
             return line.ToString().Trim();
         }
 
-
         private async Task ReadP3PixelDataAsync(BinaryReader br, byte[] pixelData, int maxValue)
         {
             int index = 0;
@@ -358,10 +365,6 @@ namespace CW3_grafika
             }
         }
 
-
-
-
-
         private async Task ReadP6PixelDataAsync(BinaryReader br, byte[] pixelData, int pixelCount)
         {
             int bytesRead = 0;
@@ -380,8 +383,5 @@ namespace CW3_grafika
                 bytesRead += read;
             }
         }
-
-
-        // ... inne metody pomocnicze jak potrzeba
     }
 }
