@@ -63,11 +63,125 @@ namespace CW3_grafika
         }
 
         public RelayCommand LoadImageCommand { get; private set; }
+        public RelayCommand SaveImageCommand { get; private set; }
 
         public ImageViewModel()
         {
             LoadImageCommand = new RelayCommand(async () => await EnqueueLoadImageAsync());
+            SaveImageCommand = new RelayCommand(async () => await EnqueueSaveImageAsync());
         }
+
+        //
+        private async Task EnqueueSaveImageAsync()
+        {
+            await eventQueue.EnqueueAsync(async () =>
+            {
+                await SaveImageAsync();
+            });
+        }
+
+        private async Task SaveImageAsync()
+        {
+            var saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Filter = "PBM Files (*.pbm)|*.pbm|PGM Files (*.pgm)|*.pgm|PPM Files (*.ppm)|*.ppm|All Files (*.*)|*.*";
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                string filePath = saveFileDialog.FileName;
+                string fileExtension = Path.GetExtension(filePath);
+
+                if (IsPbmChecked && (fileExtension == ".pbm" || fileExtension == ".P1" || fileExtension == ".P4"))
+                {
+                    SavePbmImage(filePath);
+                }
+                else if (IsPgmChecked && (fileExtension == ".pgm" || fileExtension == ".P2" || fileExtension == ".P5"))
+                {
+                    SavePgmImage(filePath);
+                }
+                else if (IsPpmChecked && (fileExtension == ".ppm" || fileExtension == ".P3" || fileExtension == ".P6"))
+                {
+                    await SavePpmImageAsync(filePath);
+                }
+                else
+                {
+                    MessageBox.Show("Nieobsługiwany format pliku.");
+                }
+            }
+        }
+
+        private void SavePbmImage(string filePath)
+        {
+            using (FileStream fs = new FileStream(filePath, FileMode.Create))
+            using (StreamWriter sw = new StreamWriter(fs))
+            {
+                sw.WriteLine("P1");
+                // Dodaj pozostałą część nagłówka
+                int width = (int)ConvertedPbmImage.Width;
+                int height = (int)ConvertedPbmImage.Height;
+                sw.WriteLine($"{width} {height}");
+
+                // Zapisz dane obrazu PBM tekstowo
+                byte[] pixelData = new byte[width * height];
+                ConvertedPbmImage.CopyPixels(pixelData, width, 0);
+
+                for (int i = 0; i < pixelData.Length; i++)
+                {
+                    byte pixelValue = pixelData[i];
+                    sw.Write(pixelValue == 255 ? "1" : "0");
+                }
+            }
+        }
+
+        private void SavePgmImage(string filePath)
+        {
+            using (FileStream fs = new FileStream(filePath, FileMode.Create))
+            using (StreamWriter sw = new StreamWriter(fs))
+            {
+                sw.WriteLine("P2");
+                // Dodaj pozostałą część nagłówka
+                int width = (int)ConvertedPbmImage.Width;
+                int height = (int)ConvertedPbmImage.Height;
+                sw.WriteLine($"{width} {height}");
+                sw.WriteLine("255"); // Zakładamy maksymalną wartość dla obrazu PGM
+
+                // Zapisz dane obrazu PGM tekstowo
+                byte[] pixelData = new byte[width * height];
+                ConvertedPbmImage.CopyPixels(pixelData, width, 0);
+
+                for (int i = 0; i < pixelData.Length; i++)
+                {
+                    byte pixelValue = pixelData[i];
+                    sw.Write($"{pixelValue} ");
+                }
+            }
+        }
+
+        private async Task SavePpmImageAsync(string filePath)
+        {
+            using (FileStream fs = new FileStream(filePath, FileMode.Create))
+            using (StreamWriter sw = new StreamWriter(fs))
+            {
+                sw.WriteLine("P3");
+                // Dodaj pozostałą część nagłówka
+                int width = (int)ConvertedPbmImage.Width;
+                int height = (int)ConvertedPbmImage.Height;
+                sw.WriteLine($"{width} {height}");
+                sw.WriteLine("255"); // Zakładamy maksymalną wartość dla obrazu PPM
+
+                // Zapisz dane obrazu PPM tekstowo
+                byte[] pixelData = new byte[width * height * 3];
+                ConvertedPbmImage.CopyPixels(pixelData, width * 3, 0);
+
+                for (int i = 0; i < pixelData.Length; i += 3)
+                {
+                    byte r = pixelData[i];
+                    byte g = pixelData[i + 1];
+                    byte b = pixelData[i + 2];
+                    sw.Write($"{r} {g} {b}   ");
+                }
+            }
+        }
+        //
 
         private void OnPropertyChanged(string propertyName)
         {
@@ -323,39 +437,45 @@ namespace CW3_grafika
 
         private async Task ReadP3PixelDataAsync(BinaryReader br, byte[] pixelData, int maxValue)
         {
-            int index = 0;
-            byte[] buffer = new byte[4096]; // Bufor do wczytywania danych
-            int bytesRead = 0; // Licznik wczytanych bajtów
-            int chunkSize = 0; // Rozmiar aktualnego chunka
+            int dataIndex = 0;
+            byte[] buffer = new byte[8192]; // Bufor o stałym rozmiarze dla optymalizacji odczytu
+            StringBuilder stringBuilder = new StringBuilder();
 
-            while (index < pixelData.Length)
+            while (dataIndex < pixelData.Length)
             {
-                // Jeśli pozostała ilość danych do wczytania jest mniejsza niż chunkSize, dostosuj chunkSize
-                int remainingBytes = pixelData.Length - index;
-                chunkSize = Math.Min(buffer.Length, remainingBytes);
-
-                // Wczytaj chunk danych
-                bytesRead = await br.BaseStream.ReadAsync(buffer, 0, chunkSize).ConfigureAwait(false);
-
-                // Jeśli nie udało się wczytać więcej danych, zakończ pętlę
+                // Odczytaj fragment danych do bufora
+                int bytesRead = await br.BaseStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
                 if (bytesRead == 0)
                 {
-                    break;
+                    break; // Zakończ jeśli nie ma więcej danych do odczytu
                 }
 
-                string text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                string[] lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                // Dodaj odczytane dane do StringBuildera
+                stringBuilder.Append(Encoding.ASCII.GetString(buffer, 0, bytesRead));
+
+                // Przetwarzaj linie tekstu
+                string text = stringBuilder.ToString();
+                int lastNewLine = text.LastIndexOf('\n');
+                if (lastNewLine == -1)
+                    continue; // Jeśli w buforze nie ma pełnych linii, kontynuuj odczyt
+
+                var lines = text.Substring(0, lastNewLine).Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                stringBuilder = new StringBuilder(text.Substring(lastNewLine + 1)); // Zachowaj niepełne linie na następny cykl
 
                 foreach (string line in lines)
                 {
+                    // Pomijaj linie komentarzy
+                    if (line.StartsWith("#"))
+                        continue;
+
                     var values = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var value in values)
                     {
                         if (int.TryParse(value, out int pixelValue))
                         {
                             pixelValue = (int)((double)pixelValue / maxValue * 255);
-                            pixelData[index++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
-                            if (index >= pixelData.Length)
+                            pixelData[dataIndex++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
+                            if (dataIndex >= pixelData.Length)
                             {
                                 return; // Zakończ, gdy wszystkie dane zostały wczytane
                             }
