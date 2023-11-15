@@ -9,6 +9,10 @@
     <Window.DataContext>
         <local:ImageViewModel/>
     </Window.DataContext>
+    <Window.Resources>
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </Window.Resources>
+
     <Grid>
         <Grid.Effect>
             <DropShadowEffect Color="Black" BlurRadius="15" Opacity="0.15" ShadowDepth="2"></DropShadowEffect>
@@ -34,7 +38,10 @@
             <Button Name="SaveButton" Command="{Binding SaveImageCommand}" Content="Zapisz obraz" Padding="5" FontSize="20" Margin="60 30 0 60" Background="White"></Button>
 
         </StackPanel>
-
+        <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock Text="Wczytywanie obrazu..." FontSize="20" FontWeight="Bold" Foreground="Black" Margin="0 10"/>
+            <ProgressBar IsIndeterminate="True" Width="200" Height="20" Margin="0 10"/>
+        </StackPanel>
         <Image Grid.Row="1" Source="{Binding ConvertedPbmImage}" RenderOptions.BitmapScalingMode="NearestNeighbor" Name="Image" Margin="100" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"></Image>
         <!-- wczytywany obraz -->
 

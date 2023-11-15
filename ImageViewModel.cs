@@ -15,12 +15,34 @@ namespace CW3_grafika
     public class ImageViewModel : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler PropertyChanged;
-
         private bool isPbmChecked;
         private bool isPgmChecked;
         private bool isPpmChecked;
         private BitmapSource convertedImage;
         private EventQueue eventQueue = new EventQueue();
+
+        private bool isLoading;
+        public bool IsLoading
+        {
+            get { return isLoading; }
+            set
+            {
+                isLoading = value;
+                OnPropertyChanged(nameof(IsLoading));
+            }
+        }
+
+        private bool isImageVisible;
+        public bool IsImageVisible
+        {
+            get { return isImageVisible; }
+            set
+            {
+                isImageVisible = value;
+                OnPropertyChanged(nameof(IsImageVisible));
+            }
+        }
+
 
         public bool IsPbmChecked
         {
@@ -84,6 +106,10 @@ namespace CW3_grafika
 
         private async Task LoadImageAsync()
         {
+            IsLoading = true; 
+            IsImageVisible = false; 
+            ConvertedPbmImage = null; 
+
             var openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "PBM Files (*.pbm)|*.pbm|PGM Files (*.pgm)|*.pgm|PPM Files (*.ppm)|*.ppm|All Files (*.*)|*.*";
 
@@ -109,7 +135,11 @@ namespace CW3_grafika
                     MessageBox.Show("Nieobsługiwany format pliku.");
                 }
             }
+
+            IsLoading = false; // Ustawia IsLoading na false po zakończeniu wczytywania
+            IsImageVisible = true; // Wyświetla obraz po zakończeniu wczytywania
         }
+
 
         private void LoadPbmImage(string filePath)
         {
@@ -119,12 +149,11 @@ namespace CW3_grafika
                 string magicNumber = sr.ReadLine();
                 while (!sr.EndOfStream && sr.Peek() == '#')
                 {
-                    sr.ReadLine(); // Pomijanie linii z komentarzami
+                    sr.ReadLine();
                 }
 
                 if (magicNumber == "P1" || magicNumber == "P4")
                 {
-                    // Wczytaj obraz PBM
                     int width, height;
                     string[] dimensions = sr.ReadLine().Split(' ');
                     width = int.Parse(dimensions[0]);
@@ -135,7 +164,6 @@ namespace CW3_grafika
 
                     if (magicNumber == "P1")
                     {
-                        // Wczytywanie w formie tekstowej
                         while (!sr.EndOfStream)
                         {
                             string line = sr.ReadLine();
@@ -154,7 +182,6 @@ namespace CW3_grafika
                     }
                     else if (magicNumber == "P4")
                     {
-                        // Wczytywanie w formie binarnej
                         int bufferSize = (int)Math.Ceiling((double)(width * height) / 8);
                         byte[] buffer = new byte[bufferSize];
                         fs.Read(buffer, 0, bufferSize);
@@ -185,14 +212,12 @@ namespace CW3_grafika
                 string magicNumber = sr.ReadLine();
                 if (magicNumber == "P2")
                 {
-                    // Pomijanie komentarzy
                     string line;
                     do
                     {
                         line = sr.ReadLine();
                     } while (!string.IsNullOrEmpty(line) && line.StartsWith("#"));
 
-                    // Wczytaj obraz PGM
                     int width, height, maxValue;
                     string[] dimensions = line.Split(' ');
                     if (dimensions.Length == 2 && int.TryParse(dimensions[0], out width) && int.TryParse(dimensions[1], out height) && width > 0 && height > 0)
@@ -243,7 +268,7 @@ namespace CW3_grafika
                 string magicNumber = await ReadNextNonCommentLineAsync(br).ConfigureAwait(false);
                 if (magicNumber != "P3" && magicNumber != "P6")
                 {
-                    MessageBox.Show("Unsupported PPM format, expected P3 or P6.");
+                    MessageBox.Show("Nieobsługiwany format PPM, oczekiwano P3 lub P6.");
                     return;
                 }
 
@@ -273,7 +298,7 @@ namespace CW3_grafika
 
                 if (width <= 0 || height <= 0 || maxValue <= 0)
                 {
-                    MessageBox.Show($"Invalid PPM header. Width: {width}, Height: {height}, MaxValue: {maxValue}");
+                    MessageBox.Show($"Nieprawidłowy nagłówek PPM. Szerokość: {width}, Wysokość: {height}, MaxValue: {maxValue}");
                     return;
                 }
 
@@ -283,12 +308,11 @@ namespace CW3_grafika
                 {
                     await ReadP3PixelDataAsync(br, pixelData, maxValue).ConfigureAwait(false);
                 }
-                else // P6 format
+                else // Format P6
                 {
                     await ReadP6PixelDataAsync(br, pixelData, width * height * 3).ConfigureAwait(false);
                 }
 
-                // Utwórz bitmapę na wątku UI
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixelData, width * 3);
@@ -302,7 +326,6 @@ namespace CW3_grafika
             StringBuilder line = new StringBuilder();
             while (br.BaseStream.Position != br.BaseStream.Length)
             {
-                // Czytaj bajt synchronicznie, ale użycie 'await Task.Run()' zapewnia, że operacja nie będzie blokowała interfejsu użytkownika
                 char c = await Task.Run(() => (char)br.ReadByte()).ConfigureAwait(false);
                 if (c == '\n' || c == '\r')
                 {
@@ -324,33 +347,29 @@ namespace CW3_grafika
         private async Task ReadP3PixelDataAsync(BinaryReader br, byte[] pixelData, int maxValue)
         {
             int dataIndex = 0;
-            byte[] buffer = new byte[8192]; // Bufor o stałym rozmiarze dla optymalizacji odczytu
+            byte[] buffer = new byte[8192];
             StringBuilder stringBuilder = new StringBuilder();
 
             while (dataIndex < pixelData.Length)
             {
-                // Odczytaj fragment danych do bufora
                 int bytesRead = await br.BaseStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
                 if (bytesRead == 0)
                 {
-                    break; // Zakończ jeśli nie ma więcej danych do odczytu
+                    break;
                 }
 
-                // Dodaj odczytane dane do StringBuildera
                 stringBuilder.Append(Encoding.ASCII.GetString(buffer, 0, bytesRead));
 
-                // Przetwarzaj linie tekstu
                 string text = stringBuilder.ToString();
                 int lastNewLine = text.LastIndexOf('\n');
                 if (lastNewLine == -1)
-                    continue; // Jeśli w buforze nie ma pełnych linii, kontynuuj odczyt
+                    continue;
 
                 var lines = text.Substring(0, lastNewLine).Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                stringBuilder = new StringBuilder(text.Substring(lastNewLine + 1)); // Zachowaj niepełne linie na następny cykl
+                stringBuilder = new StringBuilder(text.Substring(lastNewLine + 1));
 
                 foreach (string line in lines)
                 {
-                    // Pomijaj linie komentarzy
                     if (line.StartsWith("#"))
                         continue;
 
@@ -363,14 +382,13 @@ namespace CW3_grafika
                             pixelData[dataIndex++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
                             if (dataIndex >= pixelData.Length)
                             {
-                                return; // Zakończ, gdy wszystkie dane zostały wczytane
+                                return;
                             }
                         }
                     }
                 }
             }
         }
-
 
         private async Task ReadP6PixelDataAsync(BinaryReader br, byte[] pixelData, int pixelCount)
         {
@@ -383,7 +401,6 @@ namespace CW3_grafika
                 int read = await br.BaseStream.ReadAsync(buffer, 0, chunkSize).ConfigureAwait(false);
                 if (read == 0)
                 {
-                    // Jeśli nie ma więcej danych do odczytania, a nie wczytano wystarczającej ilości danych pikselowych
                     throw new EndOfStreamException("Nie udało się wczytać wystarczającej ilości danych pikselowych dla formatu P6.");
                 }
                 Array.Copy(buffer, 0, pixelData, bytesRead, read);
