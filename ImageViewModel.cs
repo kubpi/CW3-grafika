@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -230,105 +231,136 @@ namespace CW3_grafika
 
         private void LoadPpmImage(string filePath)
         {
-            using (FileStream fs = new FileStream(filePath, FileMode.Open))
-            using (StreamReader sr = new StreamReader(fs))
+            using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            using (BinaryReader br = new BinaryReader(fs))
             {
-                // Read the magic number to ensure it's a P3 format PPM file
-                string magicNumber = ReadNextNonCommentLine(sr).Trim();
-                if (magicNumber != "P3")
+                string magicNumber = ReadNextNonCommentLine(br).Trim();
+                if (magicNumber != "P3" && magicNumber != "P6")
                 {
-                    MessageBox.Show("Unsupported PPM format, expected P3.");
+                    MessageBox.Show("Unsupported PPM format, expected P3 or P6.");
                     return;
                 }
 
-                // Read the width, height, and the maximum color value, ignoring comments
                 int width = 0, height = 0, maxValue = 0;
-                bool dimensionsSet = false, maxValueSet = false;
+                bool headerParsed = false;
 
-                while (!dimensionsSet || !maxValueSet)
+                // Continue reading lines until the header is fully parsed
+                while (!headerParsed)
                 {
-                    var line = ReadNextNonCommentLine(sr).Trim();
+                    string line = ReadNextNonCommentLine(br).Trim();
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
                     var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var part in parts)
                     {
-                        if (!dimensionsSet && int.TryParse(part, out int dim))
+                        if (width == 0 && int.TryParse(part, out width))
+                            continue;
+                        if (height == 0 && int.TryParse(part, out height))
+                            continue;
+                        if (maxValue == 0 && int.TryParse(part, out maxValue))
                         {
-                            if (width == 0) width = dim;
-                            else if (height == 0) height = dim;
-
-                            if (width != 0 && height != 0) dimensionsSet = true;
-                        }
-                        else if (!maxValueSet && int.TryParse(part, out int maxVal))
-                        {
-                            maxValue = maxVal;
-                            maxValueSet = true;
+                            headerParsed = true;
+                            break;
                         }
                     }
                 }
 
-                if (width == 0 || height == 0 || maxValue == 0)
+                if (width <= 0 || height <= 0 || maxValue <= 0)
                 {
-                    MessageBox.Show($"Invalid format in PPM file. Width: {width}, Height: {height}, MaxValue: {maxValue}");
+                    MessageBox.Show($"Invalid PPM header. Width: {width}, Height: {height}, MaxValue: {maxValue}");
                     return;
                 }
 
-                // Read the pixel data, ensuring that only numeric data is processed
-                var pixelData = new List<byte>();
-                while (!sr.EndOfStream)
+                byte[] pixelData = new byte[width * height * 3];
+
+                if (magicNumber == "P3")
                 {
-                    var line = ReadNextNonCommentLine(sr);
-                    if (line == null) break;
+                    ReadP3PixelData(br, pixelData, maxValue);
+                }
+                else // P6 format
+                {
+                    // Skip any leftover whitespace and comments after the header
+                    SkipWhitespaceAndComments(br);
 
-                    // Check for non-numeric data in the pixel data section
-                    if (line.Any(c => !char.IsDigit(c) && !char.IsWhiteSpace(c)))
-                    {
-                        MessageBox.Show($"Non-numeric data encountered in pixel data section: '{line}'");
-                        return;
-                    }
-
-                    var pixelValues = line.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var value in pixelValues)
-                    {
-                        if (!int.TryParse(value, out int pixelValue))
-                        {
-                            MessageBox.Show($"Invalid pixel value encountered: '{value}'");
-                            return;
-                        }
-                        pixelData.Add((byte)(pixelValue * 255 / maxValue));
-                    }
+                    // Read the binary pixel data directly
+                    pixelData = br.ReadBytes(width * height * 3);
                 }
 
-                if (pixelData.Count != width * height * 3)
-                {
-                    MessageBox.Show("Error in image data.");
-                    return;
-                }
-
-                // Create a BitmapSource from the pixel data
-                BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixelData.ToArray(), width * 3);
+                BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixelData, width * 3);
                 ConvertedPbmImage = bitmap;
             }
         }
 
-        private string ReadNextNonCommentLine(StreamReader sr)
+        // Add additional methods as needed, such as ReadNextNonCommentLine, SkipWhitespaceAndComments, and ReadP3PixelData.
+        private string ReadNextNonCommentLine(BinaryReader br)
         {
-            string line;
-            while ((line = sr.ReadLine()) != null)
+            StringBuilder line = new StringBuilder();
+            while (br.BaseStream.Position != br.BaseStream.Length)
             {
-                int commentStart = line.IndexOf('#');
-                if (commentStart != -1)
+                char c = (char)br.ReadByte();
+                if (c == '\n' || c == '\r') // End of the line
                 {
-                    line = line.Substring(0, commentStart);
+                    string result = line.ToString().Trim();
+                    if (!string.IsNullOrEmpty(result) && !result.StartsWith("#")) // If it's not a comment line
+                    {
+                        return result;
+                    }
+                    line.Clear(); // Reset for the new line
                 }
-                line = line.Trim();
-
-                if (!string.IsNullOrEmpty(line))
+                else
                 {
-                    return line;
+                    line.Append(c);
                 }
             }
-            return null;
+            return line.ToString().Trim(); // Return the last line if end of file is reached
         }
+
+        private void SkipWhitespaceAndComments(BinaryReader br)
+        {
+            while (br.BaseStream.Position < br.BaseStream.Length)
+            {
+                char c = (char)br.PeekChar();
+                if (char.IsWhiteSpace(c))
+                {
+                    br.ReadByte(); // Skip the whitespace
+                }
+                else if (c == '#')
+                {
+                    ReadNextNonCommentLine(br); // Skip the comment line
+                }
+                else
+                {
+                    break; // Start of pixel data
+                }
+            }
+        }
+
+
+        private void ReadP3PixelData(BinaryReader br, byte[] pixelData, int maxValue)
+        {
+            int index = 0;
+            while (index < pixelData.Length)
+            {
+                string line = ReadNextNonCommentLine(br);
+                var values = line.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var value in values)
+                {
+                    if (int.TryParse(value, out int pixelValue))
+                    {
+                        pixelData[index++] = (byte)((double)pixelValue / maxValue * 255);
+                    }
+                }
+            }
+        }
+
+
+
+
+
+
+
+
 
 
 
