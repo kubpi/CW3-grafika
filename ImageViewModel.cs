@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using System.Threading.Tasks;
 
 namespace CW3_grafika
 {
@@ -64,7 +65,7 @@ namespace CW3_grafika
 
         public ImageViewModel()
         {
-            LoadImageCommand = new RelayCommand(LoadImage);
+            LoadImageCommand = new RelayCommand(async () => await LoadImageAsync());
         }
 
         private void OnPropertyChanged(string propertyName)
@@ -72,7 +73,7 @@ namespace CW3_grafika
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        private void LoadImage()
+        private async Task LoadImageAsync()
         {
             var openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "PBM Files (*.pbm)|*.pbm|PGM Files (*.pgm)|*.pgm|PPM Files (*.ppm)|*.ppm|All Files (*.*)|*.*";
@@ -92,7 +93,7 @@ namespace CW3_grafika
                 }
                 else if (IsPpmChecked && (fileExtension == ".ppm" || fileExtension == ".P3" || fileExtension == ".P6"))
                 {
-                    LoadPpmImage(filePath);
+                    await LoadPpmImageAsync(filePath);
                 }
                 else
                 {
@@ -226,15 +227,12 @@ namespace CW3_grafika
             }
         }
 
-
-
-
-        private void LoadPpmImage(string filePath)
+        private async Task LoadPpmImageAsync(string filePath)
         {
-            using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+            using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
             using (BinaryReader br = new BinaryReader(fs))
             {
-                string magicNumber = ReadNextNonCommentLine(br).Trim();
+                string magicNumber = await ReadNextNonCommentLineAsync(br).ConfigureAwait(false);
                 if (magicNumber != "P3" && magicNumber != "P6")
                 {
                     MessageBox.Show("Unsupported PPM format, expected P3 or P6.");
@@ -244,10 +242,9 @@ namespace CW3_grafika
                 int width = 0, height = 0, maxValue = 0;
                 bool headerParsed = false;
 
-                // Continue reading lines until the header is fully parsed
                 while (!headerParsed)
                 {
-                    string line = ReadNextNonCommentLine(br).Trim();
+                    string line = await ReadNextNonCommentLineAsync(br).ConfigureAwait(false);
                     if (string.IsNullOrWhiteSpace(line))
                         continue;
 
@@ -276,79 +273,86 @@ namespace CW3_grafika
 
                 if (magicNumber == "P3")
                 {
-                    ReadP3PixelData(br, pixelData, maxValue);
+                    await ReadP3PixelDataAsync(br, pixelData, maxValue).ConfigureAwait(false);
                 }
                 else // P6 format
                 {
-                    // Skip any leftover whitespace and comments after the header
-                    SkipWhitespaceAndComments(br);
-
-                    // Read the binary pixel data directly
-                    pixelData = br.ReadBytes(width * height * 3);
+                    await ReadP6PixelDataAsync(br, pixelData, width * height * 3).ConfigureAwait(false);
                 }
 
-                BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixelData, width * 3);
-                ConvertedPbmImage = bitmap;
+                // Utwórz bitmapę na wątku UI
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Rgb24, null, pixelData, width * 3);
+                    ConvertedPbmImage = bitmap;
+                });
             }
         }
 
-        // Add additional methods as needed, such as ReadNextNonCommentLine, SkipWhitespaceAndComments, and ReadP3PixelData.
-        private string ReadNextNonCommentLine(BinaryReader br)
+        private async Task<string> ReadNextNonCommentLineAsync(BinaryReader br)
         {
             StringBuilder line = new StringBuilder();
             while (br.BaseStream.Position != br.BaseStream.Length)
             {
-                char c = (char)br.ReadByte();
-                if (c == '\n' || c == '\r') // End of the line
+                // Czytaj bajt synchronicznie, ale użycie 'await Task.Run()' zapewnia, że operacja nie będzie blokowała interfejsu użytkownika
+                char c = await Task.Run(() => (char)br.ReadByte()).ConfigureAwait(false);
+                if (c == '\n' || c == '\r')
                 {
                     string result = line.ToString().Trim();
-                    if (!string.IsNullOrEmpty(result) && !result.StartsWith("#")) // If it's not a comment line
+                    if (!string.IsNullOrEmpty(result) && !result.StartsWith("#"))
                     {
                         return result;
                     }
-                    line.Clear(); // Reset for the new line
+                    line.Clear();
                 }
                 else
                 {
                     line.Append(c);
                 }
             }
-            return line.ToString().Trim(); // Return the last line if end of file is reached
-        }
-
-        private void SkipWhitespaceAndComments(BinaryReader br)
-        {
-            while (br.BaseStream.Position < br.BaseStream.Length)
-            {
-                char c = (char)br.PeekChar();
-                if (char.IsWhiteSpace(c))
-                {
-                    br.ReadByte(); // Skip the whitespace
-                }
-                else if (c == '#')
-                {
-                    ReadNextNonCommentLine(br); // Skip the comment line
-                }
-                else
-                {
-                    break; // Start of pixel data
-                }
-            }
+            return line.ToString().Trim();
         }
 
 
-        private void ReadP3PixelData(BinaryReader br, byte[] pixelData, int maxValue)
+        private async Task ReadP3PixelDataAsync(BinaryReader br, byte[] pixelData, int maxValue)
         {
             int index = 0;
+            byte[] buffer = new byte[4096]; // Bufor do wczytywania danych
+            int bytesRead = 0; // Licznik wczytanych bajtów
+            int chunkSize = 0; // Rozmiar aktualnego chunka
+
             while (index < pixelData.Length)
             {
-                string line = ReadNextNonCommentLine(br);
-                var values = line.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var value in values)
+                // Jeśli pozostała ilość danych do wczytania jest mniejsza niż chunkSize, dostosuj chunkSize
+                int remainingBytes = pixelData.Length - index;
+                chunkSize = Math.Min(buffer.Length, remainingBytes);
+
+                // Wczytaj chunk danych
+                bytesRead = await br.BaseStream.ReadAsync(buffer, 0, chunkSize).ConfigureAwait(false);
+
+                // Jeśli nie udało się wczytać więcej danych, zakończ pętlę
+                if (bytesRead == 0)
                 {
-                    if (int.TryParse(value, out int pixelValue))
+                    break;
+                }
+
+                string text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                string[] lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+                foreach (string line in lines)
+                {
+                    var values = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var value in values)
                     {
-                        pixelData[index++] = (byte)((double)pixelValue / maxValue * 255);
+                        if (int.TryParse(value, out int pixelValue))
+                        {
+                            pixelValue = (int)((double)pixelValue / maxValue * 255);
+                            pixelData[index++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
+                            if (index >= pixelData.Length)
+                            {
+                                return; // Zakończ, gdy wszystkie dane zostały wczytane
+                            }
+                        }
                     }
                 }
             }
@@ -358,58 +362,26 @@ namespace CW3_grafika
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        private byte ReadByte(StreamReader sr, int maxValue)
+        private async Task ReadP6PixelDataAsync(BinaryReader br, byte[] pixelData, int pixelCount)
         {
-            string[] values = sr.ReadLine().Split();
-            foreach (var val in values)
+            int bytesRead = 0;
+            int bytesToRead = pixelCount;
+            while (bytesRead < bytesToRead)
             {
-                if (int.TryParse(val, out int value))
+                int chunkSize = Math.Min(4096, bytesToRead - bytesRead);
+                byte[] buffer = new byte[chunkSize];
+                int read = await br.BaseStream.ReadAsync(buffer, 0, chunkSize).ConfigureAwait(false);
+                if (read == 0)
                 {
-                    return (byte)(value * 255 / maxValue);
+                    // Jeśli nie ma więcej danych do odczytania, a nie wczytano wystarczającej ilości danych pikselowych
+                    throw new EndOfStreamException("Nie udało się wczytać wystarczającej ilości danych pikselowych dla formatu P6.");
                 }
+                Array.Copy(buffer, 0, pixelData, bytesRead, read);
+                bytesRead += read;
             }
-            return 0; // Or handle this case more appropriately
-        }
-
-        private byte[] ReadBinaryData(FileStream fs, int width, int height, int maxValue)
-        {
-            byte[] buffer = new byte[width * height * 3];
-            fs.Read(buffer, 0, width * height * 3);
-
-            if (maxValue == 255)
-            {
-                return buffer;
-            }
-
-            byte[] scaledData = new byte[buffer.Length];
-            for (int i = 0; i < buffer.Length; i++)
-            {
-                scaledData[i] = (byte)(buffer[i] * 255 / maxValue);
-            }
-
-            return scaledData;
         }
 
 
-
-
-
-
+        // ... inne metody pomocnicze jak potrzeba
     }
 }
