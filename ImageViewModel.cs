@@ -323,39 +323,45 @@ namespace CW3_grafika
 
         private async Task ReadP3PixelDataAsync(BinaryReader br, byte[] pixelData, int maxValue)
         {
-            int index = 0;
-            byte[] buffer = new byte[4096]; // Bufor do wczytywania danych
-            int bytesRead = 0; // Licznik wczytanych bajtów
-            int chunkSize = 0; // Rozmiar aktualnego chunka
+            int dataIndex = 0;
+            byte[] buffer = new byte[8192]; // Bufor o stałym rozmiarze dla optymalizacji odczytu
+            StringBuilder stringBuilder = new StringBuilder();
 
-            while (index < pixelData.Length)
+            while (dataIndex < pixelData.Length)
             {
-                // Jeśli pozostała ilość danych do wczytania jest mniejsza niż chunkSize, dostosuj chunkSize
-                int remainingBytes = pixelData.Length - index;
-                chunkSize = Math.Min(buffer.Length, remainingBytes);
-
-                // Wczytaj chunk danych
-                bytesRead = await br.BaseStream.ReadAsync(buffer, 0, chunkSize).ConfigureAwait(false);
-
-                // Jeśli nie udało się wczytać więcej danych, zakończ pętlę
+                // Odczytaj fragment danych do bufora
+                int bytesRead = await br.BaseStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
                 if (bytesRead == 0)
                 {
-                    break;
+                    break; // Zakończ jeśli nie ma więcej danych do odczytu
                 }
 
-                string text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-                string[] lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                // Dodaj odczytane dane do StringBuildera
+                stringBuilder.Append(Encoding.ASCII.GetString(buffer, 0, bytesRead));
+
+                // Przetwarzaj linie tekstu
+                string text = stringBuilder.ToString();
+                int lastNewLine = text.LastIndexOf('\n');
+                if (lastNewLine == -1)
+                    continue; // Jeśli w buforze nie ma pełnych linii, kontynuuj odczyt
+
+                var lines = text.Substring(0, lastNewLine).Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                stringBuilder = new StringBuilder(text.Substring(lastNewLine + 1)); // Zachowaj niepełne linie na następny cykl
 
                 foreach (string line in lines)
                 {
+                    // Pomijaj linie komentarzy
+                    if (line.StartsWith("#"))
+                        continue;
+
                     var values = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var value in values)
                     {
                         if (int.TryParse(value, out int pixelValue))
                         {
                             pixelValue = (int)((double)pixelValue / maxValue * 255);
-                            pixelData[index++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
-                            if (index >= pixelData.Length)
+                            pixelData[dataIndex++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
+                            if (dataIndex >= pixelData.Length)
                             {
                                 return; // Zakończ, gdy wszystkie dane zostały wczytane
                             }
@@ -364,6 +370,7 @@ namespace CW3_grafika
                 }
             }
         }
+
 
         private async Task ReadP6PixelDataAsync(BinaryReader br, byte[] pixelData, int pixelCount)
         {

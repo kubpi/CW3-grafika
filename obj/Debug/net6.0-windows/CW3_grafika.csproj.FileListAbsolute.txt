@@ -64,3 +64,7 @@ C:\Users\harcx\Documents\GitHub\CW3-grafika\obj\Debug\net6.0-windows\refint\CW3_
 C:\Users\harcx\Documents\GitHub\CW3-grafika\obj\Debug\net6.0-windows\CW3_grafika.pdb
 C:\Users\harcx\Documents\GitHub\CW3-grafika\obj\Debug\net6.0-windows\CW3_grafika.genruntimeconfig.cache
 C:\Users\harcx\Documents\GitHub\CW3-grafika\obj\Debug\net6.0-windows\ref\CW3_grafika.dll
+C:\Users\kubpi\Desktop\CW3-grafika\bin\Debug\net6.0-windows\Microsoft.Win32.SystemEvents.dll
+C:\Users\kubpi\Desktop\CW3-grafika\bin\Debug\net6.0-windows\System.Drawing.Common.dll
+C:\Users\kubpi\Desktop\CW3-grafika\bin\Debug\net6.0-windows\runtimes\win\lib\net6.0\Microsoft.Win32.SystemEvents.dll
+C:\Users\kubpi\Desktop\CW3-grafika\obj\Debug\net6.0-windows\CW3_grafika.csproj.CopyComplete
