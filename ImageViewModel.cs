@@ -20,6 +20,7 @@ namespace CW3_grafika
         private bool isPpmChecked;
         private BitmapSource convertedImage;
         private EventQueue eventQueue = new EventQueue();
+        public RelayCommand SaveImageCommand { get; private set; }
 
         private bool isLoading;
         public bool IsLoading
@@ -89,6 +90,7 @@ namespace CW3_grafika
         public ImageViewModel()
         {
             LoadImageCommand = new RelayCommand(async () => await EnqueueLoadImageAsync());
+            SaveImageCommand = new RelayCommand(async () => await SaveImageAsync());
         }
 
         private void OnPropertyChanged(string propertyName)
@@ -103,6 +105,181 @@ namespace CW3_grafika
                 await LoadImageAsync();
             });
         }
+
+        private async Task SaveImageAsync()
+        {
+            var saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Filter = "PBM Files (*.pbm)|*.pbm|PGM Files (*.pgm)|*.pgm|PPM Files (*.ppm)|*.ppm|All Files (*.*)|*.*";
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                string filePath = saveFileDialog.FileName;
+                string fileExtension = Path.GetExtension(filePath).ToLower();
+                bool isBinary = MessageBox.Show("Czy chcesz zapisać w formacie binarnym?", "Format zapisu", MessageBoxButton.YesNo) == MessageBoxResult.Yes;
+
+                if (fileExtension == ".pbm")
+                {
+                    await SavePbmImageAsync(filePath, isBinary);
+                }
+                else if (fileExtension == ".pgm")
+                {
+                    await SavePgmImageAsync(filePath, isBinary);
+                }
+                else if (fileExtension == ".ppm")
+                {
+                    await SavePpmImageAsync(filePath, isBinary);
+                }
+                else
+                {
+                    MessageBox.Show("Nieobsługiwany format pliku.");
+                }
+            }
+        }
+
+        private async Task SavePbmImageAsync(string filePath, bool isBinary)
+        {
+            byte[] pixelData = GetPixelDataFromBitmapSource(); // Konwersja BitmapSource na tablicę bajtów
+
+            using (FileStream fs = new FileStream(filePath, FileMode.Create))
+            {
+                if (isBinary)
+                {
+                    // Nagłówek P4
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes("P4\n"));
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes($"{convertedImage.PixelWidth} {convertedImage.PixelHeight}\n"));
+
+                    int rowLength = (convertedImage.PixelWidth + 7) / 8; // Dopełnienie do pełnych bajtów
+                    byte[] binaryData = new byte[rowLength * convertedImage.PixelHeight];
+
+                    for (int y = 0; y < convertedImage.PixelHeight; y++)
+                    {
+                        for (int x = 0; x < convertedImage.PixelWidth; x++)
+                        {
+                            // Znajdź indeks dla obecnego bajtu i bitu wewnątrz tego bajtu
+                            int byteIndex = y * rowLength + x / 8;
+                            int bitIndex = 7 - (x % 8); // Najbardziej znaczący bit to pierwszy piksel (bitIndex = 7)
+
+                            // Ustaw bit na 1 jeśli piksel jest biały (wartość różna od zera)
+                            if (pixelData[y * convertedImage.PixelWidth + x] != 0) // Zakładamy, że wartość > 0 to biały piksel
+                            {
+                                binaryData[byteIndex] |= (byte)(1 << bitIndex);
+                            }
+                        }
+                    }
+
+                    await fs.WriteAsync(binaryData, 0, binaryData.Length);
+                }
+                else
+                {
+                    using (StreamWriter sw = new StreamWriter(fs))
+                    {
+                        sw.WriteLine("P1");
+                        sw.WriteLine($"{convertedImage.PixelWidth} {convertedImage.PixelHeight}");
+
+                        for (int y = 0; y < convertedImage.PixelHeight; y++)
+                        {
+                            for (int x = 0; x < convertedImage.PixelWidth; x++)
+                            {
+                                if (x > 0 && x % convertedImage.PixelWidth == 0)
+                                {
+                                    sw.WriteLine();
+                                }
+                                sw.Write(pixelData[y * convertedImage.PixelWidth + x] == 0 ? "0 " : "1 ");
+                            }
+                            sw.WriteLine();
+                        }
+                    }
+                }
+            }
+        }
+
+        private async Task SavePgmImageAsync(string filePath, bool isBinary)
+        {
+            byte[] pixelData = GetPixelDataFromBitmapSource();
+
+            using (FileStream fs = new FileStream(filePath, FileMode.Create))
+            {
+                if (isBinary)
+                {
+                    // Zapisz nagłówek w formacie tekstowym
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes("P5\n"));
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes($"{convertedImage.PixelWidth} {convertedImage.PixelHeight}\n"));
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes("255\n"));
+
+                    // Zapisz dane pikselowe w formacie binarnym
+                    await fs.WriteAsync(pixelData, 0, pixelData.Length);
+                }
+                else
+                {
+                    using (StreamWriter sw = new StreamWriter(fs))
+                    {
+                        sw.WriteLine("P2");
+                        sw.WriteLine($"{convertedImage.PixelWidth} {convertedImage.PixelHeight}");
+                        sw.WriteLine("255");
+
+                        for (int i = 0; i < pixelData.Length; i++)
+                        {
+                            if (i % convertedImage.PixelWidth == 0 && i != 0)
+                            {
+                                sw.WriteLine();
+                            }
+                            sw.Write($"{pixelData[i]} ");
+                        }
+                    }
+                }
+            }
+        }
+
+        private async Task SavePpmImageAsync(string filePath, bool isBinary)
+        {
+            byte[] pixelData = GetPixelDataFromBitmapSource(); // Ta funkcja konwertuje BitmapSource na tablicę bajtów
+
+            using (FileStream fs = new FileStream(filePath, FileMode.Create))
+            {
+                if (isBinary)
+                {
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes("P6\n"));
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes($"{convertedImage.PixelWidth} {convertedImage.PixelHeight}\n"));
+                    await fs.WriteAsync(Encoding.ASCII.GetBytes("255\n"));
+                    await fs.WriteAsync(pixelData, 0, pixelData.Length);
+                }
+                else
+                {
+                    using (StreamWriter sw = new StreamWriter(fs))
+                    {
+                        sw.WriteLine("P3");
+                        sw.WriteLine($"{convertedImage.PixelWidth} {convertedImage.PixelHeight}");
+                        sw.WriteLine("255");
+
+                        int pixelCount = 0;
+                        for (int i = 0; i < pixelData.Length; i += 3)
+                        {
+                            sw.Write($"{pixelData[i]} {pixelData[i + 1]} {pixelData[i + 2]} ");
+                            pixelCount++;
+
+                            if (pixelCount % convertedImage.PixelWidth == 0)
+                            {
+                                sw.WriteLine();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+        private byte[] GetPixelDataFromBitmapSource()
+        {
+            if (convertedImage == null)
+                throw new InvalidOperationException("BitmapSource is null");
+
+            int stride = (convertedImage.PixelWidth * convertedImage.Format.BitsPerPixel + 7) / 8;
+            byte[] pixelData = new byte[convertedImage.PixelHeight * stride];
+            convertedImage.CopyPixels(pixelData, stride, 0);
+
+            return pixelData;
+        }
+
 
         private async Task LoadImageAsync()
         {
