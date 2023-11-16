@@ -155,15 +155,14 @@ namespace CW3_grafika
                     {
                         for (int x = 0; x < convertedImage.PixelWidth; x++)
                         {
-                            // Znajdź indeks dla obecnego bajtu i bitu wewnątrz tego bajtu
                             int byteIndex = y * rowLength + x / 8;
-                            int bitIndex = 7 - (x % 8); // Najbardziej znaczący bit to pierwszy piksel (bitIndex = 7)
-
-                            // Ustaw bit na 1 jeśli piksel jest biały (wartość różna od zera)
-                            if (pixelData[y * convertedImage.PixelWidth + x] != 0) // Zakładamy, że wartość > 0 to biały piksel
+                            int bitIndex = 7 - (x % 8);
+                            // Ustaw bit na 1 jeśli piksel jest czarny (wartość większa od zera)
+                            if (pixelData[y * convertedImage.PixelWidth + x] > 0)
                             {
                                 binaryData[byteIndex] |= (byte)(1 << bitIndex);
                             }
+                            // Bity są domyślnie ustawione na 0 (białe piksele), więc nie trzeba nic robić
                         }
                     }
 
@@ -317,8 +316,95 @@ namespace CW3_grafika
             IsImageVisible = true; // Wyświetla obraz po zakończeniu wczytywania
         }
 
-
         private void LoadPbmImage(string filePath)
+        {
+            using (FileStream fs = new FileStream(filePath, FileMode.Open))
+            {
+                using (BinaryReader br = new BinaryReader(fs))
+                {
+                    string magicNumber = new string(br.ReadChars(2));
+                    br.ReadChar(); // Read the newline character following the magic number
+
+                    // Skip any comment lines
+                    while (br.PeekChar() == '#')
+                    {
+                        while (br.ReadChar() != '\n') ; // Read to the end of the line
+                    }
+
+                    int width = ReadNextValue(br);
+                    int height = ReadNextValue(br);
+
+                    byte[] pixelData = new byte[width * height];
+                    if (magicNumber == "P4")
+                    {
+                        // Read the pixel data for P4 format
+                        int rowLength = (width + 7) / 8;
+                        for (int y = 0; y < height; y++)
+                        {
+                            byte[] row = br.ReadBytes(rowLength);
+                            for (int x = 0; x < width; x++)
+                            {
+                                int byteIndex = x / 8;
+                                int bitIndex = 7 - (x % 8);
+                                // Set the pixel value based on the bit at the bitIndex
+                                pixelData[y * width + x] = (row[byteIndex] & (1 << bitIndex)) != 0 ? (byte)255 : (byte)0;
+                            }
+                        }
+                    }
+                    else if (magicNumber == "P1")
+                    {
+                        // Skip whitespaces if any before reading the pixel values
+                        while (br.PeekChar() == ' ' || br.PeekChar() == '\n' || br.PeekChar() == '\r')
+                        {
+                            br.ReadChar(); // Read and ignore the whitespace
+                        }
+
+                        int pixelIndex = 0;
+                        for (int y = 0; y < height; y++)
+                        {
+                            for (int x = 0; x < width; x++)
+                            {
+                                char pixelChar = br.ReadChar();
+                                while (pixelChar != '0' && pixelChar != '1')
+                                {
+                                    // Skip any non-digit characters
+                                    pixelChar = br.ReadChar();
+                                }
+                                pixelData[pixelIndex++] = pixelChar == '1' ? (byte)255 : (byte)0;
+                            }
+                        }
+                    }
+
+                    else
+                    {
+                        MessageBox.Show("Nieobsługiwany format PBM.");
+                        return;
+                    }
+
+                    // Create the bitmap
+                    BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Gray8, null, pixelData, width);
+                    ConvertedPbmImage = bitmap; // Assuming ConvertedPbmImage is a property that will refresh the UI
+                }
+            }
+        }
+
+        private int ReadNextValue(BinaryReader br)
+        {
+            string numberString = "";
+            char nextChar;
+            // Read until a digit is found
+            while (!char.IsDigit(nextChar = br.ReadChar())) ;
+            numberString += nextChar;
+            // Read until a non-digit is found
+            while (char.IsDigit(nextChar = br.ReadChar()))
+            {
+                numberString += nextChar;
+            }
+            return int.Parse(numberString);
+        }
+
+
+        /*private void LoadPbmImage(string filePath)
         {
             using (FileStream fs = new FileStream(filePath, FileMode.Open))
             using (StreamReader sr = new StreamReader(fs))
@@ -359,17 +445,27 @@ namespace CW3_grafika
                     }
                     else if (magicNumber == "P4")
                     {
-                        int bufferSize = (int)Math.Ceiling((double)(width * height) / 8);
+                        // Przewiń strumień, aby ominąć nagłówek i dotrzeć do danych pikselowych
+                        fs.Seek(0, SeekOrigin.Begin);  // Wróć na początek pliku
+                        sr.ReadLine();  // Przeczytaj linijkę z magicNumber jeszcze raz
+                        sr.ReadLine();  // Przeczytaj linijkę z wymiarami jeszcze raz
+
+                        // Czytanie danych binarnych pikseli
+                        int bufferSize = (width + 7) / 8 * height; // Oblicz rozmiar bufora danych pikselowych
                         byte[] buffer = new byte[bufferSize];
-                        fs.Read(buffer, 0, bufferSize);
+                        fs.Read(buffer, 0, bufferSize); // Czytaj dane pikselowe bezpośrednio z FileStream
+
                         for (int i = 0; i < width * height; i++)
                         {
                             int byteIndex = i / 8;
                             int bitIndex = 7 - (i % 8);
                             byte pixelValue = (byte)((buffer[byteIndex] >> bitIndex) & 0x01);
-                            pixelData[dataIndex++] = (byte)(pixelValue * 255);
+                            pixelData[i] = (byte)(pixelValue * 255);
                         }
+
+                        // Reszta kodu bez zmian...
                     }
+
 
                     BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Gray8, null, pixelData, width);
                     ConvertedPbmImage = bitmap;
@@ -379,63 +475,83 @@ namespace CW3_grafika
                     MessageBox.Show("Nieobsługiwany format PBM.");
                 }
             }
-        }
+        }*/
 
         private void LoadPgmImage(string filePath)
         {
             using (FileStream fs = new FileStream(filePath, FileMode.Open))
-            using (StreamReader sr = new StreamReader(fs))
+            using (BinaryReader br = new BinaryReader(fs))
             {
-                string magicNumber = sr.ReadLine();
-                if (magicNumber == "P2")
+                // Read magic number (P2 or P5)
+                string magicNumber = new string(br.ReadChars(2));
+                br.ReadChar(); // Read the newline character following the magic number
+
+                // Skip any comment lines
+                while (br.PeekChar() == '#')
                 {
-                    string line;
-                    do
+                    while (br.ReadChar() != '\n') ; // Read to the end of the line
+                }
+
+                // Read width, height and max value
+                int width = ReadNextValue(br);
+                int height = ReadNextValue(br);
+                int maxValue = ReadNextValue(br);
+
+                byte[] pixelData = new byte[width * height];
+
+                if (magicNumber == "P5")
+                {
+                    // Read the pixel data for P5 format
+                    for (int i = 0; i < pixelData.Length; i++)
                     {
-                        line = sr.ReadLine();
-                    } while (!string.IsNullOrEmpty(line) && line.StartsWith("#"));
-
-                    int width, height, maxValue;
-                    string[] dimensions = line.Split(' ');
-                    if (dimensions.Length == 2 && int.TryParse(dimensions[0], out width) && int.TryParse(dimensions[1], out height) && width > 0 && height > 0)
-                    {
-                        if (int.TryParse(sr.ReadLine(), out maxValue) && maxValue >= 0)
-                        {
-                            byte[] pixelData = new byte[width * height];
-                            int dataIndex = 0;
-
-                            for (int i = 0; i < height; i++)
-                            {
-                                string[] lineValues = sr.ReadLine().Split(' ');
-                                foreach (string value in lineValues)
-                                {
-                                    if (int.TryParse(value, out int pixelValue))
-                                    {
-                                        pixelValue = (int)((double)pixelValue / maxValue * 255);
-                                        pixelData[dataIndex++] = (byte)Math.Max(0, Math.Min(255, pixelValue));
-                                    }
-                                }
-                            }
-
-                            BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Gray8, null, pixelData, width);
-                            ConvertedPbmImage = bitmap;
-                        }
-                        else
-                        {
-                            MessageBox.Show("Nieprawidłowa wartość maksymalna.");
-                        }
+                        pixelData[i] = br.ReadByte();
                     }
-                    else
+                }
+                else if (magicNumber == "P2")
+                {
+                    // Read and convert the pixel data for P2 format
+                    for (int i = 0; i < pixelData.Length; i++)
                     {
-                        MessageBox.Show("Nieprawidłowe wymiary obrazu.");
+                        int pixelValue = ReadNextValue(br);
+                        pixelData[i] = (byte)(pixelValue * 255 / maxValue);
                     }
                 }
                 else
                 {
                     MessageBox.Show("Nieobsługiwany format PGM.");
+                    return;
                 }
+
+                // Create BitmapSource from pixel data
+                BitmapSource bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Gray8, null, pixelData, width);
+                ConvertedPbmImage = bitmap; // Assuming ConvertedPbmImage is a property that will refresh the UI
             }
         }
+
+        /*private int ReadNextValue(BinaryReader br)
+        {
+            StringBuilder numberStringBuilder = new StringBuilder();
+            char nextChar;
+            // Skip any whitespaces or newlines
+            while (char.IsWhiteSpace(nextChar = br.ReadChar())) ;
+
+            numberStringBuilder.Append(nextChar);
+            // Read until next whitespace
+            while (!char.IsWhiteSpace(nextChar = br.ReadChar()))
+            {
+                numberStringBuilder.Append(nextChar);
+            }
+
+            if (int.TryParse(numberStringBuilder.ToString(), out int result))
+            {
+                return result;
+            }
+            else
+            {
+                throw new InvalidDataException("Invalid number format in PGM file.");
+            }
+        }*/
+
 
         private async Task LoadPpmImageAsync(string filePath)
         {
